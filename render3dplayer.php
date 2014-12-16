@@ -69,6 +69,65 @@ class render3DPlayer {
     return ((float) $usec + (float) $sec);
   }
   
+	/* Function checs if given string is an UUID
+	 * 
+	 * Return true or false
+	 */
+	private function isUUID($candidate) {
+		return preg_match('/^[0-9A-Za-z]{8}(-[0-9A-Za-z]{4}){3}-[0-9A-Za-z]{12}$/', $candidate);
+	}
+	
+	/* Function gets the player skin URL via the Mojang service by UUID
+	 *
+	 * Espects an UUID.
+	 * Returns player skin texure link, false on failure
+	 */
+	private function getSkinURLViaUUIDViaMojang($UUID) {
+		$convertedUUID = str_replace('-', '', $UUID);
+		$mojangServiceContent = file_get_contents('https://sessionserver.mojang.com/session/minecraft/profile/' . $convertedUUID);
+		$contentArray = json_decode($mojangServiceContent, true);
+		
+		if(!is_array($contentArray)) {
+			return false;
+		}
+		
+		if(array_key_exists("properties", $contentArray)) {	
+			foreach($contentArray["properties"] as $element) {
+				if(array_key_exists("name", $element) && $element["name"] == "textures") {
+					$content = base64_decode($element["value"]);
+					$skinArray = json_decode($content, true);
+					
+					if(!array_key_exists("textures", $skinArray)) {
+						break;
+					}
+					
+					if(!array_key_exists("SKIN", $skinArray["textures"])) {
+						break;
+					}
+					
+					return $skinArray["textures"]["SKIN"]["url"];
+				}
+			}
+		}
+		
+		return false;
+	}
+	
+	/* Create a skin URL from the given name or UUID
+	 *
+	 * Espects an UUID or a name
+	 * returns a player skin link
+	 */
+	private function getSkinURL() {
+		if($this->isUUID($this->playerName)) {
+			$result = $this->getSkinURLViaUUIDViaMojang($this->playerName);
+			
+			return $result;
+		}
+		
+		return 'http://skins.minecraft.net/MinecraftSkins/' . $this->playerName . '.png';
+	}
+  
   /* Function grabs the player skin from the Mojang server and checks it.
    * 
    * Returns true on success, false on failure.
@@ -78,7 +137,11 @@ class render3DPlayer {
       $this->playerSkin = imageCreateFromPng($this->fallback_img);
       return false;
     } else {
-      $this->playerSkin = @imageCreateFromPng('http://s3.amazonaws.com/MinecraftSkins/' . $this->playerName . '.png');
+      $skinURL = $this->getSkinURL();
+      if($skinURL !== false) {
+        $this->playerSkin = @imageCreateFromPng($skinURL);
+      }
+      // If failed to get skin URL via UUID: Did you tried it multiple times? Because Mojang does not accept too many requests!
     }
     
     if (!$this->playerSkin) {
